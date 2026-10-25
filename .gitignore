@@ -17,12 +17,12 @@ build/
 dist/
 *.egg-info/
 
-# Sensitive Personal Candidate Documents & Data
+# Sensitive Personal Candidate Files in data/ (Specific files ignored)
+data/profile.json
+data/jobs_links.txt
+data/resume.pdf
 data/*.pdf
 data/*.docx
-data/resume.pdf
-data/profile.json
-jobs_links.txt
 
 # IDE and OS
 .vscode/

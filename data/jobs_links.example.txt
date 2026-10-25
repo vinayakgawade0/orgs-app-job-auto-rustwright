@@ -1,0 +1,4 @@
+# Put target job posting URLs below (one URL per line)
+# Example ATS portals supported: Workday, Dayforce, Greenhouse, Lever, etc.
+https://citi.wd5.myworkdayjobs.com/2/job/Pune-Maharashtra-India/Java-Full-Stack-Developer_26996236/apply
+https://careers.mastercard.com/us/en/apply?jobSeqNo=MASRUSR289268EXTERNALENUS

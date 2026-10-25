@@ -24,22 +24,32 @@
 
 ```text
 orgs-app-job-auto-rustwright/
-├── .env.example              # Multi-provider environment template
-├── .gitignore                # Excludes secrets, caches, and private resumes
-├── pyproject.toml            # Modern project packaging configuration
-├── requirements.txt          # Python runtime dependencies
-├── README.md                 # Project documentation
+├── config/
+│   ├── __init__.py
+│   └── settings.py          # .env loader, profile loader, provider metadata
+├── core/
+│   ├── __init__.py
+│   ├── browser.py           # Chromium lifecycle, safe navigation, SPA hydration waits
+│   ├── controller.py        # Non-blocking CLI keyboard HUD & barrier detection
+│   └── form_filler.py       # Smart DOM form filling with zero-token skip logic
+├── llm/
+│   ├── __init__.py
+│   └── dom_analyzer.py      # Multi-provider LLM analyzer (Gemini, HuggingFace, Ollama)
+├── portals/
+│   ├── __init__.py
+│   └── workday.py           # Workday repeating fieldsets, autofill & section handlers
 │
-├── main.py                   # Core orchestrator, navigation & Workday flow
-├── dom_analyzer.py           # Multi-provider LLM analyzer (JSON schema output)
-├── controller.py             # Non-blocking CLI HUD & barrier detection
-│
-├── jobs_links.txt            # Plaintext target job URLs (one per line)
-├── jobs_links.example.txt    # Template for target job URLs
+├── main.py                  # Pure high-level orchestrator
+├── controller.py            # Backward-compatible shim
+├── dom_analyzer.py          # Backward-compatible shim
+├── requirements.txt         # Python runtime dependencies
+├── pyproject.toml           # Modern package configuration
 └── data/
-    ├── profile.json          # Your active candidate profile & resume data
-    ├── profile.example.json  # Sanitized profile schema template
-    └── resume.pdf            # (Ignored) Your PDF resume for auto-upload
+    ├── jobs_links.txt       # (Ignored) Your plaintext target job URLs
+    ├── jobs_links.example.txt # Template for target job URLs
+    ├── profile.json         # (Ignored) Active candidate profile & resume data
+    ├── profile.example.json # Sanitized profile schema template
+    └── resume.pdf           # (Ignored) Your PDF resume for auto-upload
 ```
 
 ---
@@ -102,15 +112,19 @@ GEMINI_MODEL="gemini-2.5-flash"
 
 ### 4. Add Target Job URLs
 
-Add job application links to `jobs_links.txt` (one URL per line):
-```text
-https://citi.wd5.myworkdayjobs.com/2/job/Pune-Maharashtra-India/Java-Full-Stack-Developer_26996236/apply
-https://careers.mastercard.com/us/en/apply?jobSeqNo=MASRUSR289268EXTERNALENUS
-```
+1. Copy the example job links file:
+   ```powershell
+   Copy-Item data\jobs_links.example.txt data\jobs_links.txt
+   ```
+2. Add your target job application links to `data/jobs_links.txt` (one URL per line):
+   ```text
+   https://citi.wd5.myworkdayjobs.com/2/job/Pune-Maharashtra-India/Java-Full-Stack-Developer_26996236/apply
+   https://careers.mastercard.com/us/en/apply?jobSeqNo=MASRUSR289268EXTERNALENUS
+   ```
 
 ### 5. Run the Automator
 
-Run against all URLs in `jobs_links.txt`:
+Run against all URLs in `data/jobs_links.txt`:
 ```powershell
 python main.py
 ```

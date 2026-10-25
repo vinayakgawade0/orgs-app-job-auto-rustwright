@@ -1,0 +1,11 @@
+# Core Browser Automation
+rustwright>=0.3.0
+
+# HTML/DOM Parsing
+beautifulsoup4>=4.15.0
+
+# HTTP & REST APIs
+requests>=2.34.0
+
+# Google Gemini SDK (Optional - required if using LLM_PROVIDER="gemini")
+google-genai>=2.33.0

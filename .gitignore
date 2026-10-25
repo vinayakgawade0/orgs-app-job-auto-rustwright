@@ -1,0 +1,32 @@
+# Secrets and Configuration
+.env
+*.env.local
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+
+# Sensitive Personal Candidate Documents & Data
+data/*.pdf
+data/*.docx
+data/resume.pdf
+data/profile.json
+jobs_links.txt
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

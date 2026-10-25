@@ -3,27 +3,58 @@ from pathlib import Path
 from typing import Any, Optional
 
 from rustwright.sync_api import Locator, Page
+from config.settings import BASE_DIR
 from core.browser import safe_wait_dom
 from core.controller import controller
 from core.form_filler import smart_fill_field
 
 
+def _find_autofill_with_resume_button(page: Page) -> Optional[Locator]:
+    """Find the 'Autofill with Resume' button or link if present on the page or modal."""
+    selectors = [
+        "[data-automation-id='autofillWithResume']",
+        "button[data-automation-id='autofillWithResume']",
+        "a[data-automation-id='autofillWithResume']",
+        "button:has-text('Autofill with Resume')",
+        "a:has-text('Autofill with Resume')",
+        "button:has-text('Autofill with resume')",
+        "a:has-text('Autofill with resume')",
+        "button:has-text('Apply with Resume')",
+        "a:has-text('Apply with Resume')",
+    ]
+    for sel in selectors:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0 and loc.first.is_visible():
+                return loc.first
+        except Exception:
+            continue
+    return None
+
+
 def check_and_click_initial_apply_button(page: Page) -> bool:
-    """If on a job description page, click 'Apply' and prioritize 'Autofill with Resume'."""
+    """If on a job description page, click 'Apply' and strictly prioritize 'Autofill with Resume'."""
+    resume_path = (BASE_DIR / "data" / "resume.pdf").resolve()
+
     try:
+        # Check if already on a screen showing 'Autofill with Resume'
+        autofill_btn = _find_autofill_with_resume_button(page)
+        if autofill_btn and resume_path.is_file():
+            print("\033[1;36m[+] 'Autofill with Resume' already visible. Selecting it now...\033[0m")
+            autofill_btn.click()
+            safe_wait_dom(page, settle_ms=2500)
+            return _upload_resume_and_proceed(page, resume_path)
+
+        # Primary initial Apply buttons on Job Posting (DO NOT put applyManually here!)
         apply_selectors = [
             "[data-automation-id='adventureButton']",  # Workday main Apply button
-            "a[data-automation-id='applyManually']",    # Workday Apply Manually
-            "button[data-automation-id='applyManually']",
-            "a:has-text('Apply Manually')",
-            "button:has-text('Apply Manually')",
-            "a:has-text('Apply Now')",
             "button:has-text('Apply Now')",
-            "a:has-text('Apply')",
+            "a:has-text('Apply Now')",
             "button:has-text('Apply')",
+            "a[role='button']:has-text('Apply')",
         ]
 
-        # Wait up to 8s for Apply button to appear
+        # Wait up to 8s for initial Apply button to appear
         for _ in range(16):
             if page.locator("input[type='password']").count() > 0:
                 return False
@@ -46,44 +77,30 @@ def check_and_click_initial_apply_button(page: Page) -> bool:
                 found_loc.click()
                 safe_wait_dom(page, settle_ms=2500)
 
-                # Prioritize 'Autofill with Resume' if available, otherwise fallback to 'Apply Manually'
-                try:
-                    autofill_loc = page.locator(
-                        "a[data-automation-id='autofillWithResume'], button[data-automation-id='autofillWithResume'], "
-                        "a:has-text('Autofill with Resume'), button:has-text('Autofill with Resume'), "
-                        "a:has-text('Apply with Resume'), button:has-text('Apply with Resume')"
-                    )
-                    resume_path = Path("data/resume.pdf").resolve()
-
-                    if autofill_loc.count() > 0 and autofill_loc.first.is_visible() and resume_path.is_file():
-                        print("\033[1;36m[+] Selecting 'Autofill with Resume' option...\033[0m")
-                        autofill_loc.first.click()
+                # Poll specifically for Workday application mode modal (up to 8 seconds)
+                # Prioritizing 'Autofill with Resume'
+                print("[*] Checking application options: prioritizing 'Autofill with Resume'...")
+                for _ in range(16):
+                    autofill_opt = _find_autofill_with_resume_button(page)
+                    if autofill_opt and resume_path.is_file():
+                        print("\033[1;32m[+] Selecting 'Autofill with Resume' option...\033[0m")
+                        autofill_opt.click()
                         safe_wait_dom(page, settle_ms=2500)
+                        return _upload_resume_and_proceed(page, resume_path)
 
-                        file_inp = page.locator("input[type='file']")
-                        if file_inp.count() > 0:
-                            print(f"[*] Uploading resume for autofill: {resume_path.name}...")
-                            file_inp.first.set_input_files(str(resume_path))
-                            safe_wait_dom(page, settle_ms=2500)
+                    page.wait_for_timeout(500)
 
-                            cont_btn = page.locator(
-                                "button:has-text('Continue'), button:has-text('Next'), "
-                                "[data-automation-id='bottom-navigation-next-button']"
-                            )
-                            if cont_btn.count() > 0 and cont_btn.first.is_visible():
-                                cont_btn.first.click()
-                                safe_wait_dom(page, settle_ms=2500)
-                    else:
-                        manual_loc = page.locator(
-                            "a[data-automation-id='applyManually'], button:has-text('Apply Manually'), "
-                            "a:has-text('Apply Manually')"
-                        )
-                        if manual_loc.count() > 0 and manual_loc.first.is_visible():
-                            print("\033[1;36m[+] Selecting 'Apply Manually' option...\033[0m")
-                            manual_loc.first.click()
-                            safe_wait_dom(page, settle_ms=2500)
-                except Exception as opt_err:
-                    print(f"[-] Note selecting apply option: {opt_err}")
+                # If Autofill with Resume is definitely not offered by this portal, fallback to Apply Manually
+                manual_loc = page.locator(
+                    "a[data-automation-id='applyManually'], "
+                    "button[data-automation-id='applyManually'], "
+                    "a:has-text('Apply Manually'), "
+                    "button:has-text('Apply Manually')"
+                )
+                if manual_loc.count() > 0 and manual_loc.first.is_visible():
+                    print("\033[1;33m[!] 'Autofill with Resume' not offered by employer. Falling back to 'Apply Manually'...\033[0m")
+                    manual_loc.first.click()
+                    safe_wait_dom(page, settle_ms=2500)
 
                 return True
 
@@ -92,6 +109,35 @@ def check_and_click_initial_apply_button(page: Page) -> bool:
     except Exception as e:
         print(f"[-] Notice checking apply button: {e}")
     return False
+
+
+def _upload_resume_and_proceed(page: Page, resume_path: Path) -> bool:
+    """Helper to upload resume file on Autofill screen and click Continue/Next."""
+    try:
+        # Wait for file upload dropzone/input
+        for _ in range(12):
+            file_inp = page.locator("input[type='file']")
+            if file_inp.count() > 0:
+                print(f"\033[1;32m[*] Attaching resume for ATS parsing: {resume_path.name}...\033[0m")
+                file_inp.first.set_input_files(str(resume_path))
+                safe_wait_dom(page, settle_ms=3000)
+
+                # Look for 'Continue' or 'Next' button after uploading
+                cont_btn = page.locator(
+                    "button:has-text('Continue'), button:has-text('Next'), "
+                    "[data-automation-id='bottom-navigation-next-button']"
+                )
+                if cont_btn.count() > 0 and cont_btn.first.is_visible():
+                    print("[*] Advancing after resume upload...")
+                    cont_btn.first.click()
+                    safe_wait_dom(page, settle_ms=3000)
+                return True
+
+            page.wait_for_timeout(500)
+
+    except Exception as e:
+        print(f"[-] Note uploading resume: {e}")
+    return True
 
 
 def fill_last_by_label(page: Page, label_pattern: Any, value: str) -> bool:
@@ -138,46 +184,97 @@ def fill_last_by_label(page: Page, label_pattern: Any, value: str) -> bool:
     return False
 
 
-def find_add_experience_button(page: Page, is_first: bool = False) -> Optional[Locator]:
-    """Find the 'Add Work Experience' or 'Add Another' button using flexible text/aria locators."""
-    patterns = [
-        re.compile(r"Add.*(Work\s+)?Experience", re.I),
-        re.compile(r"Add\s+Another", re.I),
-        re.compile(r"^Add$", re.I),
+def find_add_experience_button(page: Page) -> Optional[Locator]:
+    """Find the specific 'Add' or 'Add Work Experience' button in the Work Experience section."""
+    # 1. Structural XPath: Find button with text 'Add' immediately following the Work Experience heading
+    xpath_selectors = [
+        "xpath=//h3[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'work experience')]/following::button[contains(., 'Add')][1]",
+        "xpath=//h2[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'work experience')]/following::button[contains(., 'Add')][1]",
+        "xpath=//legend[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'work experience')]/following::button[contains(., 'Add')][1]",
+        "xpath=//*[contains(@data-automation-id, 'workExperience')]//button[contains(., 'Add') or @data-automation-id='Add'][1]",
     ]
-
-    # 1. Search inside Work Experience container first
-    try:
-        work_section = page.locator("div, section, fieldset").filter(has=page.locator("text='Work Experience'"))
-        for pat in patterns:
-            btn = work_section.get_by_role("button", name=pat)
-            if btn.count() > 0 and btn.last.is_visible():
-                return btn.last
-    except Exception:
-        pass
-
-    # 2. Search entire page
-    for pat in patterns:
+    for xp in xpath_selectors:
         try:
-            btn = page.get_by_role("button", name=pat)
-            if btn.count() > 0 and btn.last.is_visible():
-                return btn.last
+            btn = page.locator(xp)
+            if btn.count() > 0 and btn.first.is_visible():
+                return btn.first
         except Exception:
-            pass
+            continue
 
-    # 3. Fallback CSS selectors
-    css_candidates = [
-        "[data-automation-id='add-work-experience']",
-        "[data-automation-id='Add']",
-        "button:has-text('Add Work Experience')",
-        "button:has-text('Add Another')",
-        "button:has-text('Add')",
+    # 2. Specific automation IDs
+    css_selectors = [
+        "button[data-automation-id='add-work-experience']",
+        "button[aria-label*='Work Experience' i]",
+        "button[aria-label*='Add Experience' i]",
+        "[data-automation-id='workExperienceSection'] button:has-text('Add')",
     ]
-    for sel in css_candidates:
+    for sel in css_selectors:
         try:
             loc = page.locator(sel)
-            if loc.count() > 0 and loc.last.is_visible():
-                return loc.last
+            if loc.count() > 0 and loc.first.is_visible():
+                return loc.first
+        except Exception:
+            continue
+
+    return None
+
+
+def find_add_education_button(page: Page) -> Optional[Locator]:
+    """Find the specific 'Add' or 'Add Education' button in the Education section."""
+    xpath_selectors = [
+        "xpath=//h3[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'education')]/following::button[contains(., 'Add')][1]",
+        "xpath=//h2[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'education')]/following::button[contains(., 'Add')][1]",
+        "xpath=//legend[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'education')]/following::button[contains(., 'Add')][1]",
+        "xpath=//*[contains(@data-automation-id, 'education')]//button[contains(., 'Add') or @data-automation-id='Add'][1]",
+    ]
+    for xp in xpath_selectors:
+        try:
+            btn = page.locator(xp)
+            if btn.count() > 0 and btn.first.is_visible():
+                return btn.first
+        except Exception:
+            continue
+
+    css_selectors = [
+        "button[data-automation-id='add-education']",
+        "button[aria-label*='Education' i]",
+        "[data-automation-id='educationSection'] button:has-text('Add')",
+    ]
+    for sel in css_selectors:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0 and loc.first.is_visible():
+                return loc.first
+        except Exception:
+            continue
+
+    return None
+
+
+def find_add_website_button(page: Page) -> Optional[Locator]:
+    """Find the specific 'Add' button in the Websites section."""
+    xpath_selectors = [
+        "xpath=//h3[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'website')]/following::button[contains(., 'Add')][1]",
+        "xpath=//h2[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'website')]/following::button[contains(., 'Add')][1]",
+        "xpath=//*[contains(@data-automation-id, 'website')]//button[contains(., 'Add') or @data-automation-id='Add'][1]",
+    ]
+    for xp in xpath_selectors:
+        try:
+            btn = page.locator(xp)
+            if btn.count() > 0 and btn.first.is_visible():
+                return btn.first
+        except Exception:
+            continue
+
+    css_selectors = [
+        "button[data-automation-id='add-website']",
+        "button[aria-label*='Website' i]",
+    ]
+    for sel in css_selectors:
+        try:
+            loc = page.locator(sel)
+            if loc.count() > 0 and loc.first.is_visible():
+                return loc.first
         except Exception:
             continue
 
@@ -197,7 +294,7 @@ def populate_experience_array(page: Page, experiences: list[dict[str, Any]], pro
         company = record.get("company", "")
         print(f"\n  [Record {idx}/{len(experiences)}] Processing: '{role}' at '{company}'...")
 
-        # Check if an empty fieldset is already open (common for 1st record)
+        # Check if an empty fieldset is already open
         has_open_fields = False
         try:
             title_loc = page.get_by_label(re.compile(r"Job Title", re.I))
@@ -208,9 +305,9 @@ def populate_experience_array(page: Page, experiences: list[dict[str, Any]], pro
         except Exception:
             pass
 
-        # Step 1: Find and click 'Add Work Experience' button if fields are not already open
+        # Step 1: Click 'Add Work Experience' button if fields are not already open
         if not has_open_fields:
-            add_btn = find_add_experience_button(page, is_first=(idx == 1))
+            add_btn = find_add_experience_button(page)
             if add_btn and add_btn.is_visible():
                 btn_name = (add_btn.inner_text() or "Add Work Experience").strip()
                 print(f"  [*] Clicking '{btn_name}' button...")
@@ -279,7 +376,7 @@ def handle_dynamic_experience_page(page: Page, profile: dict[str, Any]) -> bool:
         actions_taken: list[str] = []
 
         # 1. Resume / CV Upload
-        resume_path = Path("data/resume.pdf").resolve()
+        resume_path = (BASE_DIR / "data" / "resume.pdf").resolve()
         if resume_path.is_file() and has_file_input:
             try:
                 file_input = page.locator("input[type='file']").first
@@ -302,12 +399,12 @@ def handle_dynamic_experience_page(page: Page, profile: dict[str, Any]) -> bool:
         educations = profile.get("education", [])
         if educations:
             try:
-                edu_container = page.locator("div, section, fieldset").filter(has=page.locator("text='Education'"))
-                add_edu_btn = edu_container.locator("button:has-text('Add'), [data-automation-id='Add']").first
-
+                # Find the exact Add Education button
+                add_edu_btn = find_add_education_button(page)
                 has_expanded_edu = page.locator("input[data-automation-id='school'], #school").count() > 0
-                if not has_expanded_edu and add_edu_btn.count() > 0 and add_edu_btn.is_visible():
-                    print("[*] Section: Education -> Clicking 'Add' to expand...")
+
+                if not has_expanded_edu and add_edu_btn and add_edu_btn.is_visible():
+                    print("[*] Section: Education -> Clicking 'Add' button...")
                     add_edu_btn.click()
                     safe_wait_dom(page, settle_ms=1500)
 
@@ -331,14 +428,13 @@ def handle_dynamic_experience_page(page: Page, profile: dict[str, Any]) -> bool:
         linkedin = profile.get("personal", {}).get("linkedin")
         if linkedin:
             try:
-                web_container = page.locator("div, section, fieldset").filter(has=page.locator("text='Websites'"))
-                add_web_btn = web_container.locator("button:has-text('Add'), [data-automation-id='Add']").first
-
+                add_web_btn = find_add_website_button(page)
                 has_expanded_web = page.locator(
                     "input[data-automation-id='website'], input[name*='website' i], input[type='url']"
                 ).count() > 0
-                if not has_expanded_web and add_web_btn.count() > 0 and add_web_btn.is_visible():
-                    print("[*] Section: Websites -> Clicking 'Add' to expand...")
+
+                if not has_expanded_web and add_web_btn and add_web_btn.is_visible():
+                    print("[*] Section: Websites -> Clicking 'Add' button...")
                     add_web_btn.click()
                     safe_wait_dom(page, settle_ms=1000)
 

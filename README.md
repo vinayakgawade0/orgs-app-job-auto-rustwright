@@ -26,7 +26,7 @@
 orgs-app-job-auto-rustwright/
 ├── config/
 │   ├── __init__.py
-│   └── settings.py          # .env loader, profile loader, provider metadata
+│   └── settings.py          # .env loader, section profile loader, custom resume resolver
 ├── core/
 │   ├── __init__.py
 │   ├── browser.py           # Chromium lifecycle, safe navigation, SPA hydration waits
@@ -40,16 +40,24 @@ orgs-app-job-auto-rustwright/
 │   └── workday.py           # Workday repeating fieldsets, autofill & section handlers
 │
 ├── main.py                  # Pure high-level orchestrator
-├── controller.py            # Backward-compatible shim
-├── dom_analyzer.py          # Backward-compatible shim
 ├── requirements.txt         # Python runtime dependencies
 ├── pyproject.toml           # Modern package configuration
+├── .env.example             # Multi-provider environment template
 └── data/
-    ├── jobs_links.txt       # (Ignored) Your plaintext target job URLs
-    ├── jobs_links.example.txt # Template for target job URLs
-    ├── profile.json         # (Ignored) Active candidate profile & resume data
-    ├── profile.example.json # Sanitized profile schema template
-    └── resume.pdf           # (Ignored) Your PDF resume for auto-upload
+    ├── jobs_links.md        # Target job list (Markdown links supported)
+    ├── jobs_links.txt       # Plaintext target job URLs (fallback)
+    ├── profile/             # Modular section profiles (Single source of truth)
+    │   ├── profile_personal.json    # Name, email, phone, links
+    │   ├── profile_address.json     # Street, city, state, postal code, country
+    │   ├── profile_experience.json  # Work history array
+    │   ├── profile_education.json   # Degree & university records
+    │   ├── profile_skills.json      # Core skills & summary
+    │   ├── profile_screening.json   # Work authorization, relocation, notice period
+    │   ├── profile_qa.json          # Self-learned Q&A bank (persisted automatically)
+    │   └── example/                 # Sanitized templates tracked by Git
+    └── resume/              # Tailored & default resumes
+        ├── resume.pdf               # Default resume
+        └── resume_<job_id>.pdf      # Optional custom resume per job ID
 ```
 
 ---

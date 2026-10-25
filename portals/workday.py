@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from rustwright.sync_api import Locator, Page
-from config.settings import BASE_DIR
+from config.settings import BASE_DIR, get_resume_path, save_learned_qa
 from core.browser import safe_wait_dom
 from core.controller import controller
 from core.form_filler import smart_fill_field
@@ -34,7 +34,7 @@ def _find_autofill_with_resume_button(page: Page) -> Optional[Locator]:
 
 def check_and_click_initial_apply_button(page: Page) -> bool:
     """If on a job description page, click 'Apply' and strictly prioritize 'Autofill with Resume'."""
-    resume_path = (BASE_DIR / "data" / "resume.pdf").resolve()
+    resume_path = get_resume_path(page.url)
 
     try:
         # Check if already on a screen showing 'Autofill with Resume'
@@ -325,8 +325,12 @@ def populate_experience_array(page: Page, experiences: list[dict[str, Any]], pro
         if fill_last_by_label(page, re.compile(r"^Company", re.I), company):
             print(f"    \033[1;32m[✔] Company -> '{company}'\033[0m")
 
-        location = record.get("location") or profile.get("personal", {}).get("city", "Mumbai, India")
-        if fill_last_by_label(page, re.compile(r"^Location", re.I), location):
+        location = (
+            record.get("location")
+            or profile.get("personal", {}).get("city")
+            or profile.get("address", {}).get("city", "")
+        )
+        if location and fill_last_by_label(page, re.compile(r"^Location", re.I), location):
             print(f"    \033[1;32m[✔] Location -> '{location}'\033[0m")
 
         start_date = record.get("start_date", "")
@@ -376,7 +380,7 @@ def handle_dynamic_experience_page(page: Page, profile: dict[str, Any]) -> bool:
         actions_taken: list[str] = []
 
         # 1. Resume / CV Upload
-        resume_path = (BASE_DIR / "data" / "resume.pdf").resolve()
+        resume_path = get_resume_path(page.url)
         if resume_path.is_file() and has_file_input:
             try:
                 file_input = page.locator("input[type='file']").first

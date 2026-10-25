@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -13,29 +14,9 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 
 # Root directory of the application
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-# Baseline fallback candidate profile
-DEFAULT_PROFILE: dict[str, Any] = {
-    "first_name": "Vinayak",
-    "full_name": "Vinayak",
-    "job_title": "Senior Java Backend Engineer",
-    "current_role": "Senior Java Backend Engineer",
-    "years_of_experience": "4",
-    "current_company": "SS&C Technologies",
-    "experience": [
-        {
-            "company": "SS&C Technologies",
-            "role": "Senior Java Backend Engineer",
-            "duration_years": "4",
-        }
-    ],
-    "skills": ["Java", "Spring Boot", "Kafka", "PostgreSQL"],
-    "skills_summary": "Java, Spring Boot, Kafka, PostgreSQL",
-    "summary": (
-        "Senior Java Backend Engineer with 4 years of experience at SS&C Technologies, "
-        "specializing in Java, Spring Boot, Kafka, and PostgreSQL."
-    ),
-}
+DATA_DIR = BASE_DIR / "data"
+PROFILE_DIR = DATA_DIR / "profile"
+RESUME_DIR = DATA_DIR / "resume"
 
 
 def load_dotenv(dotenv_path: Optional[Union[str, Path]] = None, override: bool = True) -> None:
@@ -59,22 +40,166 @@ def load_dotenv(dotenv_path: Optional[Union[str, Path]] = None, override: bool =
 load_dotenv()
 
 
-def load_profile(profile_path: Optional[Union[str, Path]] = None) -> dict[str, Any]:
-    """Load candidate profile from a JSON file, falling back to DEFAULT_PROFILE."""
-    if profile_path is None:
-        profile_path = BASE_DIR / "data" / "profile.json"
-    path = Path(profile_path)
+def _read_json_file(path: Path) -> Any:
+    """Helper to safely read a JSON file."""
     if path.is_file():
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             pass
-    return DEFAULT_PROFILE
+    return None
+
+
+def load_section_profile(section: str) -> dict[str, Any]:
+    """Load specific profile section(s) to provide focused RAG context to the LLM.
+
+    Supported sections:
+      - 'personal'   -> profile_personal.json + profile_address.json
+      - 'experience' -> profile_experience.json + profile_skills.json
+      - 'education'  -> profile_education.json
+      - 'skills'     -> profile_skills.json
+      - 'screening'  -> profile_screening.json + profile_qa.json
+      - 'qa'         -> profile_qa.json
+    """
+    sec_lower = section.lower().strip()
+    result: dict[str, Any] = {}
+
+    if sec_lower in ("personal", "contact", "address"):
+        personal = _read_json_file(PROFILE_DIR / "profile_personal.json") or {}
+        address = _read_json_file(PROFILE_DIR / "profile_address.json") or {}
+        result.update(personal)
+        result["address"] = address
+
+    elif sec_lower in ("experience", "work"):
+        experiences = _read_json_file(PROFILE_DIR / "profile_experience.json") or []
+        skills = _read_json_file(PROFILE_DIR / "profile_skills.json") or {}
+        result["experience"] = experiences
+        result["professional"] = skills
+
+    elif sec_lower in ("education", "academics"):
+        education = _read_json_file(PROFILE_DIR / "profile_education.json") or []
+        result["education"] = education
+
+    elif sec_lower in ("screening", "questions", "qa"):
+        screening = _read_json_file(PROFILE_DIR / "profile_screening.json") or {}
+        qa_bank = _read_json_file(PROFILE_DIR / "profile_qa.json") or {}
+        result["screening_defaults"] = screening
+        result["questions"] = qa_bank
+
+    else:
+        # Fallback to loading direct file if named profile_<section>.json
+        custom_file = PROFILE_DIR / f"profile_{sec_lower}.json"
+        if custom_file.is_file():
+            data = _read_json_file(custom_file)
+            if isinstance(data, dict):
+                result.update(data)
+            else:
+                result[sec_lower] = data
+
+    return result
+
+
+def load_profile(section: Optional[str] = None) -> dict[str, Any]:
+    """Load unified profile or specific section context from data/profile/ directory.
+
+    If section is specified, returns only the focused section data (RAG approach).
+    If section is None, merges all modular profile files into a comprehensive profile.
+    """
+    if section:
+        return load_section_profile(section)
+
+    # Modular unified profile from data/profile/
+    profile: dict[str, Any] = {}
+
+    personal = _read_json_file(PROFILE_DIR / "profile_personal.json") or {}
+    address = _read_json_file(PROFILE_DIR / "profile_address.json") or {}
+    experience = _read_json_file(PROFILE_DIR / "profile_experience.json") or []
+    education = _read_json_file(PROFILE_DIR / "profile_education.json") or []
+    skills = _read_json_file(PROFILE_DIR / "profile_skills.json") or {}
+    screening = _read_json_file(PROFILE_DIR / "profile_screening.json") or {}
+    qa_bank = _read_json_file(PROFILE_DIR / "profile_qa.json") or {}
+
+    profile["personal"] = personal
+    if address:
+        profile["personal"]["address"] = address.get("address_line1", "")
+        profile["personal"]["city"] = address.get("city", "")
+        profile["personal"]["state"] = address.get("state_province", "")
+        profile["personal"]["postal_code"] = address.get("postal_code", "")
+        profile["personal"]["country"] = address.get("country", "")
+        profile["address"] = address
+
+    # Top-level convenience aliases
+    if personal:
+        profile["first_name"] = personal.get("first_name", "")
+        profile["last_name"] = personal.get("last_name", "")
+        profile["full_name"] = personal.get("full_name", "")
+        profile["email"] = personal.get("email", "")
+        profile["phone"] = personal.get("phone", "")
+
+    profile["professional"] = skills
+    if skills:
+        profile["job_title"] = skills.get("job_title", "")
+        profile["years_of_experience"] = skills.get("years_of_experience", "")
+        profile["skills"] = skills.get("primary_skills", [])
+        profile["summary"] = skills.get("summary", "")
+
+    profile["experience"] = experience
+    profile["education"] = education
+    profile["screening_defaults"] = screening
+    profile["questions"] = qa_bank
+
+    return profile
+
+
+def save_learned_qa(question: str, answer: str) -> None:
+    """Persist newly answered screening questions into data/profile/profile_qa.json."""
+    if not question or not answer:
+        return
+
+    qa_file = PROFILE_DIR / "profile_qa.json"
+    PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+
+    qa_data: dict[str, str] = _read_json_file(qa_file) or {}
+    clean_q = question.strip()
+    clean_a = str(answer).strip()
+
+    if clean_q and clean_a:
+        qa_data[clean_q] = clean_a
+        try:
+            with open(qa_file, "w", encoding="utf-8") as f:
+                json.dump(qa_data, f, indent=2)
+            print(f"  \033[1;36m[💾 LEARNED] Saved to profile_qa.json: '{clean_q}' -> '{clean_a}'\033[0m")
+        except Exception as e:
+            print(f"[-] Note saving learned Q&A: {e}")
+
+
+def get_resume_path(job_url: Optional[str] = None) -> Path:
+    """Resolve resume path, prioritizing job-specific custom resume (data/resume/resume_<job_id>.pdf)."""
+    RESUME_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 1. Custom resume per job ID if present
+    if job_url:
+        job_id_match = re.search(r"(?:_R|_|job/|jobs/|/)([A-Za-z0-9_-]{5,30})(?:/|\?|$)", job_url)
+        if job_id_match:
+            job_id = job_id_match.group(1)
+            custom_candidate = RESUME_DIR / f"resume_{job_id}.pdf"
+            if custom_candidate.is_file():
+                print(f"[*] Found custom tailored resume for Job ID '{job_id}': {custom_candidate.name}")
+                return custom_candidate
+
+    # 2. Default resume in data/resume/resume.pdf
+    nested_default = RESUME_DIR / "resume.pdf"
+    if nested_default.is_file():
+        return nested_default
+
+    # 3. Fallback to data/resume.pdf
+    root_default = DATA_DIR / "resume.pdf"
+    return root_default
 
 
 def load_job_urls(arg_target: Optional[str] = None) -> list[str]:
-    """Load job URLs from a direct CLI argument or from data/jobs_links.txt."""
+    """Load job URLs from direct CLI argument, data/jobs_links.md, or data/jobs_links.txt."""
     if arg_target and (arg_target.startswith("http://") or arg_target.startswith("https://")):
         print(f"\033[1;36m[+] Target URL provided via CLI:\033[0m {arg_target}")
         return [arg_target]
@@ -82,32 +207,43 @@ def load_job_urls(arg_target: Optional[str] = None) -> list[str]:
     if arg_target:
         target_file = Path(arg_target)
     else:
-        # Default to data/jobs_links.txt, fallback to root jobs_links.txt if present
-        data_file = BASE_DIR / "data" / "jobs_links.txt"
-        root_file = BASE_DIR / "jobs_links.txt"
-        target_file = data_file if data_file.is_file() else root_file
+        # Check jobs_links.md first, then jobs_links.txt
+        md_file = DATA_DIR / "jobs_links.md"
+        txt_file = DATA_DIR / "jobs_links.txt"
+        target_file = md_file if md_file.is_file() else txt_file
 
     if not target_file.is_file():
-        print(f"\n\033[1;31m[-] Error: File not found: '{target_file}'\033[0m")
-        print("Please create 'data/jobs_links.txt' with one job URL per line.\n")
+        print(f"\n\033[1;31m[-] Error: Job links file not found: '{target_file}'\033[0m")
+        print("Please create 'data/jobs_links.md' or 'data/jobs_links.txt' with your target URLs.\n")
         sys.exit(1)
 
     try:
         content = target_file.read_text(encoding="utf-8")
-        urls = [
-            line.strip()
-            for line in content.splitlines()
-            if line.strip() and not line.strip().startswith("#") and line.strip().startswith("http")
-        ]
+        urls: list[str] = []
+
+        # Parse both markdown links `[Title](https://...)` and raw URLs
+        for line in content.splitlines():
+            line_str = line.strip()
+            if not line_str or line_str.startswith("#"):
+                continue
+
+            md_matches = re.findall(r"\[.*?\]\((https?://[^\s\)]+)\)", line_str)
+            if md_matches:
+                urls.extend(md_matches)
+            else:
+                raw_match = re.search(r"(https?://[^\s]+)", line_str)
+                if raw_match:
+                    urls.append(raw_match.group(1))
+
         if urls:
             rel_name = target_file.relative_to(BASE_DIR) if target_file.is_relative_to(BASE_DIR) else target_file.name
             print(f"\033[1;32m[+] Loaded {len(urls)} job URL(s) from:\033[0m {rel_name}")
             return urls
+
     except Exception as e:
         print(f"[-] Error reading {target_file}: {e}")
 
-    print(f"\n\033[1;31m[-] Error: No valid URLs found in '{target_file}'.\033[0m")
-    print("Please add at least one job link starting with http:// or https:// (one per line).\n")
+    print(f"\n\033[1;31m[-] Error: No valid URLs found in '{target_file.name}'.\033[0m")
     sys.exit(1)
 
 

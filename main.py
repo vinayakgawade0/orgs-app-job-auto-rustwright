@@ -10,7 +10,12 @@ from typing import Optional
 
 from rustwright.sync_api import Page, sync_playwright
 
-from config.settings import get_active_provider_info, load_job_urls, load_profile
+from config.settings import (
+    get_active_provider_info,
+    load_job_urls,
+    load_profile,
+    save_learned_qa,
+)
 from core.browser import launch_browser, navigate_to_url, safe_wait_dom
 from core.controller import controller
 from core.form_filler import fill_form_fields
@@ -129,6 +134,19 @@ def run_application_loop(page: Page, job_url: str, max_steps: int = 15) -> str:
                     return "stopped"
                 if controller.skip_requested:
                     return "skipped"
+
+                # Automatically learn user-filled answers into profile_qa.json
+                try:
+                    for err_item in unresolved_errors:
+                        if "Missing mandatory field:" in err_item:
+                            field_label = err_item.split(":", 1)[1].strip().strip("'\"")
+                            target_loc = page.get_by_label(field_label)
+                            if target_loc.count() > 0 and target_loc.first.is_visible():
+                                user_val = target_loc.first.input_value()
+                                if user_val and user_val.strip():
+                                    save_learned_qa(field_label, user_val.strip())
+                except Exception:
+                    pass
 
                 # Retry clicking Next after user intervention
                 safe_wait_dom(page, settle_ms=1500)

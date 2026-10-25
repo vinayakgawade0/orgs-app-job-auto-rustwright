@@ -1,0 +1,20 @@
+[
+  {
+    "company": "Acme Technologies",
+    "role": "Senior Software Engineer",
+    "duration": "Apr 2024-Present",
+    "start_date": "04/2024",
+    "end_date": "Present",
+    "location": "San Francisco, CA",
+    "description": "Architect high-throughput microservices and distributed event streaming workflows. Standardize automated CI/CD deployments and maintain 99.9% uptime."
+  },
+  {
+    "company": "Beta Global Inc",
+    "role": "Software Engineer",
+    "duration": "Jan 2022-Mar 2024",
+    "start_date": "01/2022",
+    "end_date": "03/2024",
+    "location": "San Francisco, CA",
+    "description": "Developed enterprise REST APIs with Spring Boot and PostgreSQL. Reduced latency by 35% through indexing and query optimizations."
+  }
+]

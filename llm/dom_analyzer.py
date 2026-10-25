@@ -205,11 +205,16 @@ def _call_ollama(prompt: str, model: str, host_url: str, api_key: Optional[str] 
 def analyze_dom(
     page_content: Union[str, Any],
     profile: Optional[dict[str, Any]] = None,
+    section: Optional[str] = None,
     provider: Optional[str] = None,
     api_key: Optional[str] = None,
     model: Optional[str] = None,
 ) -> dict[str, str]:
-    """Analyze page HTML/markdown and return CSS selectors mapped to profile values."""
+    """Analyze page HTML/markdown and return CSS selectors mapped to profile values.
+
+    Can accept a specific section (e.g. 'personal', 'experience', 'screening')
+    to pass focused RAG context to the LLM instead of a monolithic profile.
+    """
     if hasattr(page_content, "content") and callable(page_content.content):
         raw_content = page_content.content()
     else:
@@ -219,7 +224,7 @@ def analyze_dom(
     active_provider = (provider or provider_info["provider"]).lower()
     active_model = model or provider_info["model"]
 
-    profile_data = profile if profile is not None else load_profile()
+    profile_data = profile if profile is not None else load_profile(section=section)
     sanitized_content = _clean_content(raw_content)
     prompt = _build_prompt(sanitized_content, profile_data)
 

@@ -1,0 +1,11 @@
+{
+  "first_name": "Jane",
+  "last_name": "Doe",
+  "full_name": "Jane Doe",
+  "email": "jane.doe@example.com",
+  "country_phone_code": "+1",
+  "phone": "5550192834",
+  "linkedin": "https://linkedin.com/in/janedoe",
+  "github": "https://github.com/janedoe",
+  "portfolio": "https://janedoe.dev"
+}

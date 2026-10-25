@@ -1,0 +1,19 @@
+{
+  "job_title": "Senior Software Engineer",
+  "years_of_experience": "4",
+  "primary_skills": [
+    "Java (17/21)",
+    "Spring Boot",
+    "Apache Kafka",
+    "PostgreSQL",
+    "Microservices"
+  ],
+  "secondary_skills": [
+    "Python",
+    "Docker",
+    "Kubernetes",
+    "AWS",
+    "CI/CD"
+  ],
+  "summary": "Senior Software Engineer with 4 years of experience architecting and deploying robust, highly scalable enterprise solutions using Java, Spring Boot and distributed systems."
+}
